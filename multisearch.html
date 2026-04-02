@@ -255,8 +255,9 @@ nav { display:flex; align-items:center; gap:3px }
 }
 #mm-tooltip mark { border-radius:2px; padding:0 1px; font-weight:600 }
 .mm-tip-entry {
-  padding:6px 9px; word-break:break-word;
+  padding:6px 9px; word-break:break-word; cursor:pointer;
 }
+.mm-tip-entry:hover { background:rgba(255,255,255,0.08); }
 .mm-tip-entry + .mm-tip-entry {
   border-top:1px solid rgba(255,255,255,0.1);
 }
@@ -942,7 +943,7 @@ function renderMinimap() {
     }
 
     // Click: jump to the first result in the cluster
-    m.addEventListener('click', e => { e.stopPropagation(); jumpToMark(ci[0].domMark); });
+    m.addEventListener('click', e => { e.stopPropagation(); activateByMark(ci[0].domMark, ci[0].pixelTop); });
     m.addEventListener('mouseenter', e => showMmTooltip(e, ci));
     m.addEventListener('mouseleave', hideMmTooltip);
     frag.appendChild(m);
@@ -951,13 +952,29 @@ function renderMinimap() {
   updateVPI();
 }
 
-// Jump to a specific <mark> DOM element rather than a char position
+// Activate a result by its mark DOM element and pre-measured pixel offset.
+// pixelTop is mark.offsetTop captured at renderMinimap time — stable even after
+// renderHL() rebuilds the DOM.
+function activateByMark(markEl, pixelTop) {
+  const idx = S.markEls ? S.markEls.indexOf(markEl) : -1;
+  if (idx >= 0) {
+    S.activeResultIdx = idx;
+    renderHL();
+    renderResults();
+    const activeEl = $results.querySelector('.active-result');
+    if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+  }
+  // pixelTop is offsetTop relative to $tinner — center it in the viewport
+  const viewportH = $tscroll.clientHeight;
+  const target = Math.max(0, (pixelTop ?? 0) - viewportH / 3);
+  $tscroll.scrollTo({ top: target, behavior: 'smooth' });
+}
+
 function jumpToMark(markEl) {
   if (!markEl) return;
-  const markRect = markEl.getBoundingClientRect();
-  const scrollRect = $tscroll.getBoundingClientRect();
-  const targetScroll = $tscroll.scrollTop + (markRect.top - scrollRect.top) - 80;
-  $tscroll.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+  const viewportH = $tscroll.clientHeight;
+  const target = Math.max(0, markEl.offsetTop - viewportH / 3);
+  $tscroll.scrollTo({ top: target, behavior: 'smooth' });
 }
 
 // Minimap tooltip — accepts an array of cluster items
@@ -981,6 +998,7 @@ function showMmTooltip(e, clusterItems) {
     const entry = document.createElement('div');
     entry.className = 'mm-tip-entry';
     entry.innerHTML = `${p}${esc(pre)}<mark style="background:${dc};color:${tc};border-radius:2px;padding:0 1px;font-weight:600">${esc(mat)}</mark>${esc(post)}${sfx}`;
+    entry.addEventListener('click', () => { hideMmTooltip(); activateByMark(item.domMark, item.pixelTop); });
     scroll.appendChild(entry);
   }
 
