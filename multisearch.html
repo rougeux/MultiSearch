@@ -24,7 +24,7 @@
   --vp-brd:  rgba(28,26,23,0.22);
   --r: 4px;
   --sans: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
-  --lcol-w: 264px;
+  --lcol-w: 300px;
 }
 [data-theme="dark"] {
   --bg:      #131210;
@@ -150,6 +150,9 @@ nav { display:flex; align-items:center; gap:3px }
 }
 .del-btn:hover { color:#e04444 }
 .del-btn:disabled { opacity:.2; cursor:default; pointer-events:none }
+.srow-count {
+  font-size:12px; color:var(--text3); white-space:nowrap; flex-shrink:0;
+}
 
 #add-btn, .bulk-btn {
   background:none; border:1px solid var(--border); color:var(--text2);
@@ -563,6 +566,7 @@ function _buildSearchRow(id, term, c) {
   row.innerHTML =
     `<div class="cdot" style="background:${themeColor(c)}" title="Change color"><input type="color" value="${c}"></div>` +
     `<input class="sinput" type="text" placeholder="Search..." value="${esc(term)}">` +
+    `<span class="srow-count" style="display:none"></span>` +
     `<button class="go-btn" title="Search">${SVG_SEARCH}</button>` +
     `<button class="vis-btn" title="Toggle visibility">${SVG_EYE}</button>` +
     `<button class="del-btn" title="Remove">&#x2715;</button>`;
@@ -713,9 +717,27 @@ function render() {
 function _render() {
   renderHL();
   renderResults();
+  _updateRowCounts();
   // syncSize ensures $tscroll.scrollHeight is accurate before minimap reads it
   syncSize();
   renderMinimap();
+}
+
+// Update the result count shown next to each search input
+function _updateRowCounts() {
+  for (const s of S.searches) {
+    const row = $sboxes.querySelector(`[data-sid="${s.id}"]`);
+    if (!row) continue;
+    const span = row.querySelector('.srow-count');
+    if (!span) continue;
+    const n = s.results.length;
+    if (!s.term || n === 0) {
+      span.style.display = 'none';
+    } else {
+      span.textContent = n.toLocaleString();
+      span.style.display = '';
+    }
+  }
 }
 
 // ── Highlight layer ────────────────────────────────────────────────────────────
