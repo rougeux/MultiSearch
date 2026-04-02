@@ -718,7 +718,12 @@ function findAll(text, term) {
   return res;
 }
 
-// ── Get all visible results sorted by position ─────────────────────────────────
+// Respect prefers-reduced-motion for scroll animations
+function scrollBehavior() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+}
+
+
 function allVisibleResults() {
   const all = [];
   for (const s of S.searches) {
@@ -934,14 +939,14 @@ function activateByMark(charPos, pixelTop) {
   }
   const viewportH = $tscroll.clientHeight;
   const target = Math.max(0, (pixelTop ?? 0) - viewportH / 3);
-  $tscroll.scrollTo({ top: target, behavior: 'smooth' });
+  $tscroll.scrollTo({ top: target, behavior: scrollBehavior() });
 }
 
 function jumpToMark(markEl) {
   if (!markEl) return;
   const viewportH = $tscroll.clientHeight;
   const target = Math.max(0, markEl.offsetTop - viewportH / 3);
-  $tscroll.scrollTo({ top: target, behavior: 'smooth' });
+  $tscroll.scrollTo({ top: target, behavior: scrollBehavior() });
 }
 
 function positionMmTooltip(e) {
@@ -1022,7 +1027,7 @@ function updateVPI() {
 
 function onMinimapClick(e) {
   const rect = $mmap.getBoundingClientRect();
-  $tscroll.scrollTo({ top: ((e.clientY - rect.top) / rect.height) * $tscroll.scrollHeight, behavior:'smooth' });
+  $tscroll.scrollTo({ top: ((e.clientY - rect.top) / rect.height) * $tscroll.scrollHeight, behavior:scrollBehavior() });
 }
 
 // ── Jump to character position ─────────────────────────────────────────────────
@@ -1037,7 +1042,7 @@ function jumpTo(charPos) {
   } else {
     // Proportional fallback
     const pct = S.text.length ? charPos / S.text.length : 0;
-    $tscroll.scrollTo({ top: Math.max(0, pct * $tscroll.scrollHeight - 80), behavior: 'smooth' });
+    $tscroll.scrollTo({ top: Math.max(0, pct * $tscroll.scrollHeight - 80), behavior: scrollBehavior() });
   }
 }
 
