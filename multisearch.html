@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MultiSearch - Run multiple searches simultaneously</title>
+<style>
+:root {
+  --bg:      #f4f3ef;
+  --bg2:     #ece9e2;
+  --bg3:     #e2dfd7;
+  --surface: #ffffff;
+  --border:  #d4d0c8;
+  --border2: #bbb7ae;
+  --text:    #1c1a17;
+  --text2:   #5a5650;
+  --text3:   #8a8780;
+  --accent:  #1c1a17;
+  --hdr-bg:  #1c1a17;
+  --hdr-txt: #f4f3ef;
+  --mmap-bg: #d0cdc6;
+  --mmap-bar:#7a7770;
+  --vp-bg:   rgba(28,26,23,0.12);
+  --vp-brd:  rgba(28,26,23,0.22);
+  --r: 4px;
+  --sans: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --lcol-w: 264px;
+}
+[data-theme="dark"] {
+  --bg:      #131210;
+  --bg2:     #1b1916;
+  --bg3:     #232119;
+  --surface: #1b1916;
+  --border:  #2d2b27;
+  --border2: #3d3b37;
+  --text:    #e6e3dc;
+  --text2:   #9a9790;
+  --text3:   #666360;
+  --accent:  #e6e3dc;
+  --hdr-bg:  #0e0d0b;
+  --hdr-txt: #e6e3dc;
+  --mmap-bg: #191816;
+  --mmap-bar:#4a4845;
+  --vp-bg:   rgba(230,227,220,0.09);
+  --vp-brd:  rgba(230,227,220,0.16);
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
+html,body { height:100%; font-family:var(--sans); background:var(--bg); color:var(--text); font-size:16px; line-height:1.5; overflow:hidden }
+
+#app { display:flex; flex-direction:column; height:100vh }
+
+/* HEADER */
+#hdr {
+  background:var(--hdr-bg); color:var(--hdr-txt); height:42px; padding:0 14px;
+  display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+  border-bottom:1px solid rgba(255,255,255,0.06); z-index:100;
+}
+.logo { font-weight:700; font-size:16px; letter-spacing:-.3px; display:flex; align-items:center; gap:8px }
+.logo em { font-style:normal; color:rgba(255,255,255,0.38); font-weight:400; font-size:13px }
+nav { display:flex; align-items:center; gap:3px }
+.nav-btn {
+  background:none; border:none; color:rgba(255,255,255,0.45);
+  font-size:12px; letter-spacing:.4px; text-transform:uppercase;
+  cursor:pointer; padding:4px 8px; border-radius:var(--r); transition:all .12s;
+}
+.nav-btn:hover { color:rgba(255,255,255,.9); background:rgba(255,255,255,.07) }
+#theme-btn {
+  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
+  color:rgba(255,255,255,.65); font-size:12px; letter-spacing:.4px; text-transform:uppercase;
+  cursor:pointer; padding:4px 10px; border-radius:var(--r); transition:all .12s; margin-left:6px;
+}
+#theme-btn:hover { background:rgba(255,255,255,.13); color:#fff }
+
+/* BROWSER WARNING */
+#bwarn {
+  background:#92400e; color:#fde68a; font-size:13px;
+  padding:5px 14px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+}
+#bwarn button {
+  background:none; border:1px solid rgba(253,230,138,.35); color:#fde68a;
+  cursor:pointer; font-size:12px; padding:2px 8px; border-radius:var(--r);
+}
+
+/* COLUMNS */
+#cols { display:grid; grid-template-columns:var(--lcol-w) 1fr 66px; flex:1; overflow:hidden; position:relative }
+
+/* RESIZE HANDLE */
+#resize-handle {
+  position:absolute; top:0; bottom:0; left:var(--lcol-w);
+  width:5px; margin-left:-3px; cursor:col-resize; z-index:50;
+  background:transparent; transition:background .15s;
+}
+#resize-handle:hover, #resize-handle.dragging { background:var(--border2) }
+
+/* LEFT COLUMN */
+#lcol { background:var(--bg2); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; min-width:180px; max-width:480px }
+.col-hdr {
+  padding:9px 11px 7px; font-size:13px; font-weight:600;
+  color:var(--text3); text-transform:uppercase; letter-spacing:.8px;
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+
+/* add/bulk buttons */
+#search-actions {
+  padding:6px 9px; display:flex; gap:5px; flex-shrink:0; border-bottom:1px solid var(--border);
+}
+
+/* search boxes */
+#sboxes { padding:9px 9px 6px; display:flex; flex-direction:column; gap:6px; flex-shrink:0; border-bottom:1px solid var(--border); max-height:50vh; overflow-y:auto }
+.srow { display:flex; gap:4px; align-items:center }
+.cdot {
+  width:20px; height:20px; border-radius:50%; border:2px solid var(--border2);
+  cursor:pointer; flex-shrink:0; position:relative; overflow:hidden; transition:border-color .12s;
+}
+.cdot:hover { border-color:var(--text2) }
+.cdot input[type="color"] {
+  position:absolute; inset:-4px; width:calc(100% + 8px); height:calc(100% + 8px);
+  border:none; cursor:pointer; opacity:0;
+}
+.sinput {
+  flex:1; min-width:0; background:var(--surface); border:1px solid var(--border);
+  color:var(--text); font-size:15px; padding:5px 7px;
+  border-radius:var(--r); outline:none; transition:border-color .12s;
+}
+.sinput:focus { border-color:var(--border2) }
+.sinput::placeholder { color:var(--text3) }
+.go-btn {
+  background:var(--accent); color:var(--bg); border:none;
+  padding:5px 7px; border-radius:var(--r); cursor:pointer; flex-shrink:0;
+  transition:opacity .12s; display:flex; align-items:center; justify-content:center;
+  width:28px; height:28px;
+}
+.go-btn:hover { opacity:.72 }
+.go-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round }
+.vis-btn {
+  background:none; border:1px solid var(--border); color:var(--text2);
+  padding:3px 5px; border-radius:var(--r); cursor:pointer; flex-shrink:0;
+  transition:all .12s; font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center;
+  width:24px; height:28px;
+}
+.vis-btn:hover { border-color:var(--border2); background:var(--bg3) }
+.vis-btn.hidden-search { opacity:.45 }
+.vis-btn svg { width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round }
+.del-btn {
+  background:none; border:none; color:var(--text3); cursor:pointer;
+  font-size:17px; line-height:1; padding:2px 3px; border-radius:var(--r);
+  transition:color .12s; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  width:22px; height:28px;
+}
+.del-btn:hover { color:#e04444 }
+.del-btn:disabled { opacity:.2; cursor:default; pointer-events:none }
+
+#add-btn, .bulk-btn {
+  background:none; border:1px solid var(--border); color:var(--text2);
+  font-size:14px; padding:5px 8px; border-radius:var(--r);
+  cursor:pointer; transition:all .12s; white-space:nowrap;
+}
+#add-btn { flex:1; text-align:center; }
+#add-btn:hover, .bulk-btn:hover { border-color:var(--border2); color:var(--text); background:var(--bg3) }
+
+/* results header + nav */
+.res-hdr {
+  padding:7px 9px 5px; font-size:13px; font-weight:600;
+  color:var(--text3); text-transform:uppercase; letter-spacing:.8px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:space-between;
+  border-top:1px solid var(--border);
+}
+.badge { background:var(--bg3); color:var(--text2); font-size:12px; padding:1px 6px; border-radius:10px }
+.res-nav { display:none; padding:4px 9px; gap:4px; flex-shrink:0; border-bottom:1px solid var(--border) }
+.res-nav.visible { display:flex }
+.nav-arrow {
+  background:none; border:1px solid var(--border); color:var(--text2);
+  padding:3px 8px; border-radius:var(--r); cursor:pointer;
+  transition:all .12s; display:flex; align-items:center; gap:4px; font-size:13px;
+}
+.nav-arrow:hover { border-color:var(--border2); color:var(--text); background:var(--bg3) }
+.nav-arrow svg { width:12px; height:12px; stroke:currentColor; fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round }
+
+#results { flex:1; overflow-y:auto; padding:6px 8px; display:flex; flex-direction:column; gap:3px }
+.rempty { color:var(--text3); font-size:14px; text-align:center; padding:18px 0 }
+.ritem {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  padding:5px 7px 5px 10px; cursor:pointer; transition:border-color .1s,background .1s;
+}
+.ritem:hover { border-color:var(--border2); background:var(--bg3) }
+.ritem.active-result { outline:2px solid var(--text2); outline-offset:-1px }
+.rsnip { font-size:14px; line-height:1.5; color:var(--text2); word-break:break-word }
+.rsnip mark { border-radius:2px; padding:0 1px; font-weight:600 }
+.rmeta { font-size:13px; color:var(--text3); margin-top:2px }
+
+/* MIDDLE COLUMN */
+#mcol { display:flex; flex-direction:column; overflow:hidden; background:var(--bg) }
+#twrap { position:relative; flex:1; overflow:hidden }
+/* tscroll is the scrollable viewport — fills twrap absolutely */
+#tscroll { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden }
+/* tinner grows with content but is at least as tall as the viewport */
+#tinner { position:relative; min-height:100% }
+.hll {
+  position:absolute; top:0; left:0; right:0; bottom:0; pointer-events:none;
+  font-family:var(--sans); font-size:16px; line-height:1.7;
+  white-space:pre-wrap; word-break:break-word;
+  padding:16px; color:transparent; z-index:0;
+}
+.hll mark { border-radius:2px; padding:1px 0; color:transparent }
+/* active mark shown via an overlay span rendered by renderHL */
+.hll mark.active-mark {
+  outline:2px solid #000;
+  outline-offset:1px;
+}
+[data-theme="dark"] .hll mark.active-mark { outline-color:#fff }
+#mtxt {
+  /* Sits on top of hll; exactly fills tinner so textarea == content height */
+  position:absolute; inset:0;
+  background:transparent; border:none; outline:none;
+  font-family:var(--sans); font-size:16px; line-height:1.7;
+  color:var(--text); resize:none; padding:16px; caret-color:var(--text);
+  overflow:hidden; z-index:1; width:100%; height:100%;
+}
+#mtxt::placeholder { color:var(--text3) }
+
+/* MINIMAP */
+#rcol {
+  background:var(--mmap-bg); border-left:1px solid var(--border);
+  display:flex; flex-direction:column; align-items:stretch;
+  padding:6px 0; overflow:hidden;
+}
+#mmap { position:relative; flex:1; cursor:pointer }
+#mmtrack {
+  position:absolute; left:50%; transform:translateX(-50%);
+  top:0; bottom:0; width:10px; background:var(--mmap-bar); border-radius:5px;
+}
+#mmmarks { position:absolute; inset:0; pointer-events:none }
+.mmk {
+  position:absolute; left:50%; transform:translateX(-50%);
+  width:18px; height:3px; border-radius:2px; cursor:pointer;
+  pointer-events:all; transition:transform .1s; opacity:0.9;
+}
+.mmk:hover { transform:translateX(-50%) scaleX(1.3); opacity:1 }
+#vpi {
+  position:absolute; left:2px; right:2px;
+  background:var(--vp-bg); border:1px solid var(--vp-brd);
+  border-radius:3px; pointer-events:none; min-height:4px; display:none;
+}
+
+/* MINIMAP TOOLTIP */
+#mm-tooltip {
+  position:fixed; z-index:300; background:var(--hdr-bg); color:var(--hdr-txt);
+  font-size:12px; line-height:1.45; padding:6px 9px; border-radius:var(--r);
+  max-width:220px; pointer-events:none; display:none; word-break:break-word;
+  box-shadow:0 4px 12px rgba(0,0,0,.25);
+}
+#mm-tooltip mark { border-radius:2px; padding:0 1px; font-weight:600 }
+
+/* MODAL */
+#moverlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.48);
+  z-index:200; align-items:center; justify-content:center;
+}
+#moverlay.vis { display:flex }
+#mdlg {
+  background:var(--surface); border:1px solid var(--border2); border-radius:6px;
+  padding:24px 26px; max-width:460px; width:90%;
+  box-shadow:0 8px 32px rgba(0,0,0,.18); position:relative;
+}
+#mdlg-close {
+  position:absolute; top:12px; right:12px;
+  background:none; border:none; color:var(--text3); cursor:pointer;
+  width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+  border-radius:var(--r); transition:all .12s; font-size:19px; line-height:1;
+}
+#mdlg-close:hover { background:var(--bg3); color:var(--text) }
+#mdlg h2 { font-size:17px; font-weight:700; margin-bottom:12px; padding-right:24px }
+#mdlg p { color:var(--text2); font-size:14px; line-height:1.65; margin-bottom:10px }
+#mdlg kbd {
+  background:var(--bg3); border:1px solid var(--border2); border-radius:3px;
+  padding:1px 5px; font-size:12px;
+}
+#mdlg a { color:var(--text2) }
+
+::-webkit-scrollbar { width:5px; height:5px }
+::-webkit-scrollbar-track { background:transparent }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
+::-webkit-scrollbar-thumb:hover { background:var(--text3) }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="bwarn" style="display:none">
+    <span>Your browser may not be fully supported. Best results in Chrome, Firefox, Edge, or Safari.</span>
+    <button onclick="this.parentElement.style.display='none'">Dismiss</button>
+  </div>
+
+  <header id="hdr">
+    <div class="logo">MultiSearch <em>Run multiple searches at once</em></div>
+    <nav>
+      <button class="nav-btn" onclick="showAbout()">About</button>
+      <button id="theme-btn" onclick="toggleTheme()">Light</button>
+    </nav>
+  </header>
+
+  <div id="cols">
+    <div id="resize-handle"></div>
+
+    <aside id="lcol">
+      <div class="col-hdr">Search</div>
+      <div id="search-actions">
+        <button id="add-btn" onclick="addSearch()">+ Add search</button>
+        <button class="bulk-btn" onclick="runAllSearches()" title="Run all searches">Run all</button>
+        <button class="bulk-btn" onclick="clearAllSearches()" title="Clear all searches">Clear all</button>
+      </div>
+      <div id="sboxes"></div>
+      <div class="res-hdr">Results <span class="badge" id="tcnt">0</span></div>
+      <div class="res-nav" id="res-nav">
+        <button class="nav-arrow" id="prev-btn" onclick="navigateResult(-1)" title="Previous result">
+          <svg viewBox="0 0 12 12"><polyline points="8,2 4,6 8,10"/></svg>
+          Prev
+        </button>
+        <button class="nav-arrow" id="next-btn" onclick="navigateResult(1)" title="Next result">
+          Next
+          <svg viewBox="0 0 12 12"><polyline points="4,2 8,6 4,10"/></svg>
+        </button>
+      </div>
+      <div id="results"><div class="rempty">No searches yet.</div></div>
+    </aside>
+
+    <main id="mcol">
+      <div id="twrap">
+        <div id="tscroll">
+          <div id="tinner">
+            <div class="hll" id="hll" aria-hidden="true"></div>
+            <textarea id="mtxt" placeholder="Paste or type text here, then search." spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside id="rcol">
+      <div id="mmap" onclick="onMinimapClick(event)">
+        <div id="mmtrack"></div>
+        <div id="mmmarks"></div>
+        <div id="vpi"></div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<div id="mm-tooltip"></div>
+
+<div id="moverlay" onclick="if(event.target===this)closeAbout()">
+  <div id="mdlg">
+    <button id="mdlg-close" onclick="closeAbout()" title="Close">&#x2715;</button>
+    <h2>MultiSearch</h2>
+    <p>Paste any amount of text into the center panel, then run one or more simultaneous searches. Each search gets its own highlight color. Click the color dot next to any search box to customize it.</p>
+    <p>
+      <strong>Search:</strong> Type a term and press <kbd>Enter</kbd> or click the search icon.<br>
+      <strong>Multi-line paste:</strong> Pasting multiple lines into a search box automatically creates one search per line.<br>
+      <strong>Accents:</strong> Searches ignore accents, so "cafe" matches "cafe" and vice versa.<br>
+      <strong>Visibility:</strong> Toggle the eye icon to show or hide a search's highlights.<br>
+      <strong>Navigate:</strong> Click any result, use the Prev/Next buttons, or click a minimap marker to jump to it.<br>
+      <strong>Minimap:</strong> Click anywhere on the right strip to scroll there. Hover a marker to preview the result.
+    </p>
+    <p>Handles large texts efficiently. Everything runs entirely in your browser. No data is ever sent anywhere and no tracking of any kind is used. This page can be saved and run locally without an internet connection. The code and page may be used freely without any restrictions.</p>
+    <p style="font-size:13px;color:var(--text3)">Created with Claude by <a href="https://www.c82.net" target="_blank" rel="noopener">Nicholas Rougeux</a>.</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+const S = { text:'', searches:[], nextId:1, theme:'light', activeResultIdx:-1, markEls:[] };
+
+// Visually distinct, WCAG AA-safe highlight colors (black text >= 4.5:1 contrast)
+// First is always yellow; rest are shuffled on load
+const BASE_PALETTE = [
+  '#FFD600', // yellow - always first
+  '#69F0AE', // green
+  '#40C4FF', // sky blue
+  '#FF80AB', // pink
+  '#CCFF90', // lime
+  '#80D8FF', // light blue
+  '#FFD180', // amber
+  '#EA80FC', // purple
+  '#FF6E40', // deep orange
+  '#A7FFEB', // teal
+  '#F4FF81', // yellow-green
+  '#FF9E80', // coral
+];
+
+// Shuffle all but the first color
+let PALETTE = [BASE_PALETTE[0], ...BASE_PALETTE.slice(1).sort(()=>Math.random()-.5)];
+
+// ── DOM refs ───────────────────────────────────────────────────────────────────
+const $sboxes   = document.getElementById('sboxes');
+const $results  = document.getElementById('results');
+const $tcnt     = document.getElementById('tcnt');
+const $mtxt     = document.getElementById('mtxt');
+const $hll      = document.getElementById('hll');
+const $tscroll  = document.getElementById('tscroll');
+const $tinner   = document.getElementById('tinner');
+const $mmmarks  = document.getElementById('mmmarks');
+const $mmap     = document.getElementById('mmap');
+const $vpi      = document.getElementById('vpi');
+const $tbtn     = document.getElementById('theme-btn');
+const $resNav   = document.getElementById('res-nav');
+const $mmTip    = document.getElementById('mm-tooltip');
+
+// ── Theme ──────────────────────────────────────────────────────────────────────
+function initTheme() {
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(dark ? 'dark' : 'light');
+}
+function applyTheme(t) {
+  S.theme = t;
+  document.documentElement.setAttribute('data-theme', t);
+  $tbtn.textContent = t === 'dark' ? 'Light' : 'Dark';
+}
+function toggleTheme() { applyTheme(S.theme === 'dark' ? 'light' : 'dark'); }
+
+// ── Browser check ──────────────────────────────────────────────────────────────
+function checkBrowser() {
+  if (!/Chrome|CriOS|Firefox|Safari|Edg/.test(navigator.userAgent))
+    document.getElementById('bwarn').style.display = 'flex';
+}
+
+// ── Color helpers ──────────────────────────────────────────────────────────────
+function nextColor() {
+  const used = S.searches.map(s => s.color);
+  for (const c of PALETTE) if (!used.includes(c)) return c;
+  // Palette exhausted: generate a random hue at high lightness (guaranteed to pass with black)
+  const h = (Math.random() * 360 | 0) / 360;
+  return hslToHex(h, 0.85, 0.78); // lightness 78% always gives >= 4.5:1 with black
+}
+function toHex(c) {
+  if (c.startsWith('#') && c.length === 7) return c;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+  const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0,0,1,1);
+  const d = x.getImageData(0,0,1,1).data;
+  return '#' + [d[0],d[1],d[2]].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+// Compute relative luminance of a hex color
+function luminance(hex) {
+  const r = parseInt(hex.slice(1,3),16)/255;
+  const g = parseInt(hex.slice(3,5),16)/255;
+  const b = parseInt(hex.slice(5,7),16)/255;
+  const lin = v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+  return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+}
+
+// Contrast ratio of a color against black (#000000)
+function contrastWithBlack(hex) {
+  return (luminance(hex) + 0.05) / 0.05;
+}
+
+// Highlighted text is always black. This function ensures the background
+// color is light enough to meet WCAG AA (4.5:1) against black.
+// If it isn't, we lighten it in HSL space until it does.
+function ensureLightEnough(hex) {
+  if (contrastWithBlack(hex) >= 4.5) return hex;
+  // Convert to RGB, then iteratively increase lightness
+  let r = parseInt(hex.slice(1,3),16);
+  let g = parseInt(hex.slice(3,5),16);
+  let b = parseInt(hex.slice(5,7),16);
+  // Convert RGB to HSL
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max+min)/2;
+  if (max === min) { h = s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max) {
+      case r: h = ((g-b)/d + (g<b?6:0))/6; break;
+      case g: h = ((b-r)/d + 2)/6; break;
+      default:h = ((r-g)/d + 4)/6; break;
+    }
+  }
+  // Increase lightness until contrast passes
+  while (l < 1) {
+    l = Math.min(1, l + 0.02);
+    const newHex = hslToHex(h, s, l);
+    if (contrastWithBlack(newHex) >= 4.5) return newHex;
+  }
+  return '#ffffff';
+}
+
+function hslToHex(h, s, l) {
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p+(q-p)*6*t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p+(q-p)*(2/3-t)*6;
+    return p;
+  };
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const q = l < 0.5 ? l*(1+s) : l+s-l*s;
+    const p = 2*l-q;
+    r = hue2rgb(p,q,h+1/3); g = hue2rgb(p,q,h); b = hue2rgb(p,q,h-1/3);
+  }
+  return '#' + [r,g,b].map(v => Math.round(v*255).toString(16).padStart(2,'0')).join('');
+}
+
+// Text on highlights is always black for consistency and contrast
+function contrastText(hex) { return '#000000'; }
+
+function rgbaStr(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// SVG icons
+const SVG_SEARCH = `<svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>`;
+const SVG_EYE    = `<svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>`;
+const SVG_EYEOFF = `<svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" opacity=".4"/><circle cx="8" cy="8" r="2" opacity=".4"/><line x1="2" y1="2" x2="14" y2="14"/></svg>`;
+
+// ── Search box management ──────────────────────────────────────────────────────
+function addSearch(term='', color=null) {
+  const id = S.nextId++;
+  const c  = ensureLightEnough(toHex(color || nextColor()));
+  S.searches.push({ id, term, color:c, results:[], visible:true });
+  _buildSearchRow(id, term, c);
+  _updateDelBtns();
+  if (term) doSearch(id);
+}
+
+function _buildSearchRow(id, term, c) {
+  const row = document.createElement('div');
+  row.className = 'srow'; row.dataset.sid = id;
+  row.innerHTML =
+    `<div class="cdot" style="background:${c}" title="Change color"><input type="color" value="${c}"></div>` +
+    `<input class="sinput" type="text" placeholder="Search..." value="${esc(term)}">` +
+    `<button class="go-btn" title="Search">${SVG_SEARCH}</button>` +
+    `<button class="vis-btn" title="Toggle visibility">${SVG_EYE}</button>` +
+    `<button class="del-btn" title="Remove">&#x2715;</button>`;
+
+  row.querySelector('input[type="color"]').addEventListener('input', e => onColorChange(id, e.target.value));
+  row.querySelector('.sinput').addEventListener('keydown', e => { if (e.key==='Enter') doSearch(id); });
+  row.querySelector('.sinput').addEventListener('paste', e => onSearchPaste(e, id));
+  row.querySelector('.go-btn').addEventListener('click', () => doSearch(id));
+  row.querySelector('.vis-btn').addEventListener('click', () => toggleVisibility(id));
+  row.querySelector('.del-btn').addEventListener('click', () => removeSearch(id));
+  $sboxes.appendChild(row);
+}
+
+function _updateDelBtns() {
+  const rows = $sboxes.querySelectorAll('.srow');
+  rows.forEach(r => {
+    const btn = r.querySelector('.del-btn');
+    btn.disabled = rows.length === 1;
+  });
+}
+
+function removeSearch(id) {
+  if (S.searches.length <= 1) return;
+  S.searches = S.searches.filter(s => s.id !== id);
+  $sboxes.querySelector(`[data-sid="${id}"]`)?.remove();
+  _updateDelBtns();
+  S.activeResultIdx = -1;
+  render();
+}
+
+function toggleVisibility(id) {
+  const s = S.searches.find(x => x.id === id);
+  if (!s) return;
+  s.visible = !s.visible;
+  const row = $sboxes.querySelector(`[data-sid="${id}"]`);
+  if (row) {
+    const btn = row.querySelector('.vis-btn');
+    btn.innerHTML = s.visible ? SVG_EYE : SVG_EYEOFF;
+    btn.classList.toggle('hidden-search', !s.visible);
+    btn.title = s.visible ? 'Hide highlights' : 'Show highlights';
+  }
+  S.activeResultIdx = -1;
+  render();
+}
+
+function onColorChange(id, hex) {
+  const s = S.searches.find(x => x.id === id);
+  if (!s) return;
+  const safe = ensureLightEnough(hex);
+  s.color = safe;
+  const row = $sboxes.querySelector(`[data-sid="${id}"]`);
+  if (row) {
+    row.querySelector('.cdot').style.background = safe;
+    // Update the color input to reflect the adjusted color
+    const inp = row.querySelector('input[type="color"]');
+    if (inp) inp.value = safe;
+  }
+  render();
+}
+
+function doSearch(id) {
+  const s = S.searches.find(x => x.id === id);
+  if (!s) return;
+  const inp = $sboxes.querySelector(`[data-sid="${id}"] .sinput`);
+  s.term = inp ? inp.value : s.term;
+  s.results = findAll(S.text, s.term);
+  S.activeResultIdx = -1;
+  render();
+}
+
+function runAllSearches() {
+  for (const s of S.searches) {
+    const inp = $sboxes.querySelector(`[data-sid="${s.id}"] .sinput`);
+    s.term = inp ? inp.value : s.term;
+    s.results = findAll(S.text, s.term);
+  }
+  S.activeResultIdx = -1;
+  render();
+}
+
+function clearAllSearches() {
+  const total = S.searches.reduce((n,s)=>n+s.results.length,0);
+  const msg = total
+    ? `Are you sure you want to clear all ${S.searches.length} search${S.searches.length>1?'es':''}? This will remove ${total} result${total>1?'s':''}.`
+    : `Are you sure you want to clear all searches?`;
+  if (!confirm(msg)) return;
+  // Keep one empty search box, remove rest
+  $sboxes.innerHTML = '';
+  S.searches = [];
+  S.activeResultIdx = -1;
+  addSearch();
+  render();
+}
+
+// ── Multi-line paste into search box ──────────────────────────────────────────
+function onSearchPaste(e, id) {
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!text) return;
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length <= 1) return;
+  e.preventDefault();
+  const s = S.searches.find(x => x.id === id);
+  const inp = $sboxes.querySelector(`[data-sid="${id}"] .sinput`);
+  if (inp) inp.value = lines[0];
+  if (s) s.term = lines[0];
+  doSearch(id);
+  for (let i = 1; i < lines.length; i++) addSearch(lines[i]);
+}
+
+// ── Accent normalization ───────────────────────────────────────────────────────
+function normalize(s) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+// ── Text search ────────────────────────────────────────────────────────────────
+function findAll(text, term) {
+  if (!term || !text) return [];
+  const normText = normalize(text);
+  const normTerm = normalize(term);
+  const ql = normTerm.length;
+  if (!ql) return [];
+  const res = [];
+  let i = 0;
+  while ((i = normText.indexOf(normTerm, i)) !== -1) {
+    res.push({ start:i, end:i+ql });
+    i += ql;
+  }
+  return res;
+}
+
+// ── Get all visible results sorted by position ─────────────────────────────────
+function allVisibleResults() {
+  const all = [];
+  for (const s of S.searches) {
+    if (!s.visible || !s.term) continue;
+    for (const r of s.results) all.push({ ...r, color:s.color });
+  }
+  all.sort((a,b) => a.start - b.start);
+  return all;
+}
+
+// ── Unified render ─────────────────────────────────────────────────────────────
+let _raf = null;
+function render() {
+  if (_raf) cancelAnimationFrame(_raf);
+  _raf = requestAnimationFrame(_render);
+}
+function _render() {
+  renderHL();
+  renderResults();
+  // syncSize ensures $tscroll.scrollHeight is accurate before minimap reads it
+  syncSize();
+  renderMinimap();
+}
+
+// ── Highlight layer ────────────────────────────────────────────────────────────
+// Renders one <mark> per visible result (no merging) so each result maps directly
+// to a DOM element. S.markEls[i] = mark element for allVisibleResults()[i].
+// This lets renderMinimap and jumpTo use actual pixel positions, not char ratios.
+function renderHL() {
+  const text = S.text;
+  S.markEls = [];
+  if (!text) { $hll.textContent = ''; return; }
+
+  // Collect visible result spans with their search color
+  const spans = [];
+  for (const s of S.searches) {
+    if (!s.visible || !s.term) continue;
+    for (const r of s.results) {
+      spans.push({ s: r.start, e: r.end, c: s.color });
+    }
+  }
+  if (!spans.length) { $hll.textContent = text; return; }
+  // Sort by position — this matches the order of allVisibleResults()
+  spans.sort((a, b) => a.s - b.s || a.e - b.e);
+  // Assign idx after sort so S.markEls[i] == mark for allVisibleResults()[i]
+  spans.forEach((sp, i) => { sp.idx = i; });
+
+  const activeResult = getActiveResult();
+  const outlineColor = S.theme === 'dark' ? '#ffffff' : '#000000';
+
+  // Build DOM directly so we capture live mark element references
+  const frag = document.createDocumentFragment();
+  let cur = 0;
+  for (const span of spans) {
+    if (span.s < cur) continue; // overlapped by a previous mark — skip
+    if (span.s > cur) {
+      frag.appendChild(document.createTextNode(text.slice(cur, span.s)));
+    }
+    const isActive = activeResult && span.s === activeResult.start && span.e === activeResult.end;
+    const mark = document.createElement('mark');
+    mark.style.cssText = `background:${span.c};color:#000000;border-radius:2px;padding:1px 0`;
+    if (isActive) {
+      mark.style.outline = `2px solid ${outlineColor}`;
+      mark.style.outlineOffset = '1px';
+      mark.style.borderRadius = '3px';
+    }
+    mark.textContent = text.slice(span.s, span.e);
+    S.markEls[span.idx] = mark;
+    frag.appendChild(mark);
+    cur = span.e;
+  }
+  if (cur < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(cur)));
+  }
+  $hll.innerHTML = '';
+  $hll.appendChild(frag);
+}
+
+// Return the currently active result object {start, end, color} or null
+function getActiveResult() {
+  if (S.activeResultIdx < 0) return null;
+  const all = allVisibleResults();
+  return all[S.activeResultIdx] || null;
+}
+
+// ── Results list ───────────────────────────────────────────────────────────────
+function renderResults() {
+  const all = [];
+  for (const s of S.searches) {
+    if (!s.visible || !s.term) continue;
+    for (const r of s.results) all.push({ ...r, color:s.color });
+  }
+  all.sort((a,b) => a.start - b.start);
+
+  const totalAll = S.searches.reduce((n,s) => n + s.results.length, 0);
+  $tcnt.textContent = all.length !== totalAll ? `${all.length}/${totalAll}` : all.length;
+
+  // Show/hide nav
+  $resNav.classList.toggle('visible', all.length > 0);
+
+  $results.innerHTML = '';
+  if (!all.length) {
+    const em = document.createElement('div'); em.className = 'rempty';
+    const hasTerms = S.searches.some(s => s.term);
+    const allHidden = hasTerms && S.searches.every(s => !s.visible || !s.term || s.results.length === 0);
+    em.textContent = !hasTerms ? 'No searches yet.' : 'No matches found.';
+    $results.appendChild(em);
+    return;
+  }
+
+  const CTX = 45, text = S.text, frag = document.createDocumentFragment();
+  all.forEach((r, idx) => {
+    const ss = Math.max(0, r.start - CTX), se = Math.min(text.length, r.end + CTX);
+    const pre = text.slice(ss, r.start), mat = text.slice(r.start, r.end), post = text.slice(r.end, se);
+    const p = ss > 0 ? '...' : '', sfx = se < text.length ? '...' : '';
+    const tc = contrastText(r.color);
+    const div = document.createElement('div');
+    div.className = 'ritem' + (idx === S.activeResultIdx ? ' active-result' : '');
+    div.dataset.ridx = idx;
+    div.style.borderLeft = `3px solid ${r.color}`;
+    div.innerHTML =
+      `<div class="rsnip">${p}${esc(pre)}<mark style="background:${r.color};color:${tc}">${esc(mat)}</mark>${esc(post)}${sfx}</div>` +
+      `<div class="rmeta">@ ${r.start.toLocaleString()}</div>`;
+    div.addEventListener('click', () => { S.activeResultIdx = idx; jumpTo(r.start); renderResults(); renderHL(); });
+    frag.appendChild(div);
+  });
+  $results.appendChild(frag);
+}
+
+// ── Result navigation ──────────────────────────────────────────────────────────
+function navigateResult(dir) {
+  const all = allVisibleResults();
+  if (!all.length) return;
+  S.activeResultIdx = (S.activeResultIdx + dir + all.length) % all.length;
+  const r = all[S.activeResultIdx];
+  jumpTo(r.start);
+  renderResults();
+  renderHL();
+  // Scroll the result into view in sidebar
+  const activeEl = $results.querySelector('.active-result');
+  if (activeEl) activeEl.scrollIntoView({ block:'nearest' });
+}
+
+// ── Minimap ────────────────────────────────────────────────────────────────────
+// Marker positions are derived from the actual rendered pixel offset of each
+// highlight mark in the $hll layer, so they always match what's on screen.
+function renderMinimap() {
+  $mmmarks.innerHTML = '';
+  const H = $mmap.clientHeight;
+  if (!S.text || !H) { updateVPI(); return; }
+
+  // scrollHeight is the total rendered height of the content
+  const scrollH = $tscroll.scrollHeight;
+  if (!scrollH) { updateVPI(); return; }
+
+  // Get all rendered <mark> elements from the highlight layer.
+  // Each mark's offsetTop (relative to $tinner) gives its true pixel position.
+  const marks = $hll.querySelectorAll('mark');
+  if (!marks.length) { updateVPI(); return; }
+
+  // Build a lookup: for each search, collect results in order
+  // We match marks to results by their order in the DOM (same order as results)
+  const frag = document.createDocumentFragment();
+  let markIdx = 0;
+
+  for (const s of S.searches) {
+    if (!s.visible || !s.term) continue;
+    for (const r of s.results) {
+      const mark = marks[markIdx++];
+      if (!mark) continue;
+      // offsetTop of the mark relative to $tinner (the scrollable content root)
+      const pixelTop = mark.offsetTop;
+      const pct = pixelTop / scrollH;
+      const m = document.createElement('div');
+      m.className = 'mmk';
+      m.style.background = s.color;
+      m.style.top = `${pct * H}px`;
+      m.addEventListener('click', e => { e.stopPropagation(); jumpToMark(mark); });
+      m.addEventListener('mouseenter', e => showMmTooltip(e, r.start, r.end, s.color));
+      m.addEventListener('mouseleave', hideMmTooltip);
+      frag.appendChild(m);
+    }
+  }
+  $mmmarks.appendChild(frag);
+  updateVPI();
+}
+
+// Jump to a specific <mark> DOM element rather than a char position
+function jumpToMark(markEl) {
+  if (!markEl) return;
+  const markRect = markEl.getBoundingClientRect();
+  const scrollRect = $tscroll.getBoundingClientRect();
+  const targetScroll = $tscroll.scrollTop + (markRect.top - scrollRect.top) - 80;
+  $tscroll.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+}
+
+// Minimap tooltip
+function showMmTooltip(e, start, end, color) {
+  const text = S.text;
+  const CTX = 60;
+  const ss = Math.max(0, start - CTX), se = Math.min(text.length, end + CTX);
+  const pre = text.slice(ss, start), mat = text.slice(start, end), post = text.slice(se > end ? end : se, se);
+  const p = ss > 0 ? '...' : '', sfx = se < text.length ? '...' : '';
+  const tc = contrastText(color);
+  $mmTip.innerHTML = `${p}${esc(pre)}<mark style="background:${color};color:${tc}">${esc(mat)}</mark>${esc(text.slice(end, se))}${sfx}`;
+  $mmTip.style.display = 'block';
+  positionMmTooltip(e);
+}
+function positionMmTooltip(e) {
+  const tw = $mmTip.offsetWidth || 220, th = $mmTip.offsetHeight || 60;
+  let x = e.clientX - tw - 10, y = e.clientY - th / 2;
+  if (x < 4) x = e.clientX + 14;
+  y = Math.max(4, Math.min(window.innerHeight - th - 4, y));
+  $mmTip.style.left = x + 'px'; $mmTip.style.top = y + 'px';
+}
+function hideMmTooltip() { $mmTip.style.display = 'none'; }
+
+function updateVPI() {
+  const H = $mmap.clientHeight, sh = $tscroll.scrollHeight, ch = $tscroll.clientHeight;
+  if (sh <= ch || !S.text) { $vpi.style.display = 'none'; return; }
+  $vpi.style.display = 'block';
+  $vpi.style.top    = `${($tscroll.scrollTop / sh) * H}px`;
+  $vpi.style.height = `${Math.max(4, (ch / sh) * H)}px`;
+}
+
+function onMinimapClick(e) {
+  const rect = $mmap.getBoundingClientRect();
+  $tscroll.scrollTo({ top: ((e.clientY - rect.top) / rect.height) * $tscroll.scrollHeight, behavior:'smooth' });
+}
+
+// ── Jump to character position ─────────────────────────────────────────────────
+// After renderHL(), S.markEls maps result index (in allVisibleResults order) -> mark DOM element.
+// jumpTo finds the right mark element and scrolls to it.
+function jumpTo(charPos) {
+  const all = allVisibleResults();
+  const idx = all.findIndex(r => r.start === charPos);
+  const markEl = (idx >= 0 && S.markEls) ? S.markEls[idx] : null;
+  if (markEl) {
+    jumpToMark(markEl);
+  } else {
+    // Proportional fallback
+    const pct = S.text.length ? charPos / S.text.length : 0;
+    $tscroll.scrollTo({ top: Math.max(0, pct * $tscroll.scrollHeight - 80), behavior: 'smooth' });
+  }
+}
+
+// ── Textarea sync ──────────────────────────────────────────────────────────────
+// tinner must be tall enough for the text content (so tscroll can scroll it).
+// We measure by temporarily letting the textarea report its natural scroll height.
+function syncSize() {
+  // Temporarily shrink textarea to measure true content height
+  $mtxt.style.height = '0';
+  const contentH = $mtxt.scrollHeight;
+  const viewportH = $tscroll.clientHeight;
+  // tinner is at least viewport height; grows to fit content
+  const h = Math.max(contentH, viewportH);
+  $tinner.style.height = h + 'px';
+  $hll.style.height = h + 'px';
+  // textarea always fills tinner exactly (no overflow, no gap)
+  $mtxt.style.height = h + 'px';
+}
+
+let _ir = null;
+function onInput() {
+  S.text = $mtxt.value;
+  if (_ir) cancelAnimationFrame(_ir);
+  _ir = requestAnimationFrame(() => {
+    syncSize();
+    for (const s of S.searches) if (s.term) s.results = findAll(S.text, s.term);
+    S.activeResultIdx = -1;
+    render();
+  });
+}
+$mtxt.addEventListener('input', onInput);
+$mtxt.addEventListener('paste', () => requestAnimationFrame(onInput));
+$tscroll.addEventListener('scroll', updateVPI, { passive:true });
+window.addEventListener('resize', () => { syncSize(); renderMinimap(); }, { passive:true });
+
+// ── Sidebar resize ─────────────────────────────────────────────────────────────
+(function initResize() {
+  const handle = document.getElementById('resize-handle');
+  const cols   = document.getElementById('cols');
+  let dragging = false, startX = 0, startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX;
+    startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--lcol-w'));
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.max(180, Math.min(480, startW + (e.clientX - startX)));
+    document.documentElement.style.setProperty('--lcol-w', w + 'px');
+    cols.style.gridTemplateColumns = `${w}px 1fr 66px`;
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    // Re-render so minimap marker positions update to match new layout
+    requestAnimationFrame(() => { syncSize(); renderMinimap(); });
+  });
+})();
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+function showAbout() { document.getElementById('moverlay').classList.add('vis'); }
+function closeAbout() { document.getElementById('moverlay').classList.remove('vis'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAbout(); });
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+initTheme();
+checkBrowser();
+addSearch();
+syncSize();
+</script>
+</body>
+</html>
