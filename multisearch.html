@@ -363,7 +363,7 @@ nav { display:flex; align-items:center; gap:3px }
       <strong>Minimap:</strong> Click anywhere on the right strip to scroll there. Hover a marker to preview the result.
     </p>
     <p>Handles large texts efficiently. Everything runs entirely in your browser. No data is ever sent anywhere and no tracking of any kind is used. This page can be saved and run locally without an internet connection. The code and page may be used freely without any restrictions.</p>
-    <p style="font-size:13px;color:var(--text3)">Created with Claude by <a href="https://www.c82.net" target="_blank" rel="noopener">Nicholas Rougeux</a>.</p>
+    <p style="font-size:13px;color:var(--text3)">Created with Claude by <a href="https://www.c82.net" target="_blank" rel="noopener">Nicholas Rougeux</a>. View the <a href="https://github.com/rougeux/multisearch" target="_blank" rel="noopener">source on GitHub</a>.</p>
   </div>
 </div>
 
@@ -417,6 +417,12 @@ function applyTheme(t) {
   S.theme = t;
   document.documentElement.setAttribute('data-theme', t);
   $tbtn.textContent = t === 'dark' ? 'Light' : 'Dark';
+  // Update color dots and re-render highlights to reflect theme-adjusted colors
+  for (const s of S.searches) {
+    const row = $sboxes.querySelector(`[data-sid="${s.id}"]`);
+    if (row) row.querySelector('.cdot').style.background = themeColor(s.color);
+  }
+  if (S.text) render();
 }
 function toggleTheme() { applyTheme(S.theme === 'dark' ? 'light' : 'dark'); }
 
@@ -430,9 +436,9 @@ function checkBrowser() {
 function nextColor() {
   const used = S.searches.map(s => s.color);
   for (const c of PALETTE) if (!used.includes(c)) return c;
-  // Palette exhausted: generate a random hue at high lightness (guaranteed to pass with black)
+  // Palette exhausted: generate a random hue at high lightness
   const h = (Math.random() * 360 | 0) / 360;
-  return hslToHex(h, 0.85, 0.78); // lightness 78% always gives >= 4.5:1 with black
+  return hslToHex(h, 0.85, 0.78);
 }
 function toHex(c) {
   if (c.startsWith('#') && c.length === 7) return c;
@@ -442,7 +448,7 @@ function toHex(c) {
   return '#' + [d[0],d[1],d[2]].map(v => v.toString(16).padStart(2,'0')).join('');
 }
 
-// Compute relative luminance of a hex color
+// Compute relative luminance
 function luminance(hex) {
   const r = parseInt(hex.slice(1,3),16)/255;
   const g = parseInt(hex.slice(3,5),16)/255;
@@ -450,23 +456,14 @@ function luminance(hex) {
   const lin = v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
   return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
 }
+function contrastWithBlack(hex) { return (luminance(hex) + 0.05) / 0.05; }
+function contrastWithWhite(hex) { return (1 + 0.05) / (luminance(hex) + 0.05); }
 
-// Contrast ratio of a color against black (#000000)
-function contrastWithBlack(hex) {
-  return (luminance(hex) + 0.05) / 0.05;
-}
-
-// Highlighted text is always black. This function ensures the background
-// color is light enough to meet WCAG AA (4.5:1) against black.
-// If it isn't, we lighten it in HSL space until it does.
-function ensureLightEnough(hex) {
-  if (contrastWithBlack(hex) >= 4.5) return hex;
-  // Convert to RGB, then iteratively increase lightness
-  let r = parseInt(hex.slice(1,3),16);
-  let g = parseInt(hex.slice(3,5),16);
-  let b = parseInt(hex.slice(5,7),16);
-  // Convert RGB to HSL
-  r /= 255; g /= 255; b /= 255;
+// Convert hex to [h, s, l] each 0-1
+function hexToHsl(hex) {
+  let r = parseInt(hex.slice(1,3),16)/255;
+  let g = parseInt(hex.slice(3,5),16)/255;
+  let b = parseInt(hex.slice(5,7),16)/255;
   const max = Math.max(r,g,b), min = Math.min(r,g,b);
   let h, s, l = (max+min)/2;
   if (max === min) { h = s = 0; }
@@ -479,13 +476,7 @@ function ensureLightEnough(hex) {
       default:h = ((r-g)/d + 4)/6; break;
     }
   }
-  // Increase lightness until contrast passes
-  while (l < 1) {
-    l = Math.min(1, l + 0.02);
-    const newHex = hslToHex(h, s, l);
-    if (contrastWithBlack(newHex) >= 4.5) return newHex;
-  }
-  return '#ffffff';
+  return [h, s, l];
 }
 
 function hslToHex(h, s, l) {
@@ -506,8 +497,42 @@ function hslToHex(h, s, l) {
   return '#' + [r,g,b].map(v => Math.round(v*255).toString(16).padStart(2,'0')).join('');
 }
 
-// Text on highlights is always black for consistency and contrast
-function contrastText(hex) { return '#000000'; }
+// Ensure color is light enough for black text (light mode, WCAG AA >= 4.5:1)
+function ensureLightEnough(hex) {
+  if (contrastWithBlack(hex) >= 4.5) return hex;
+  const [h, s, l] = hexToHsl(hex);
+  let ll = l;
+  while (ll < 1) {
+    ll = Math.min(1, ll + 0.02);
+    const c = hslToHex(h, s, ll);
+    if (contrastWithBlack(c) >= 4.5) return c;
+  }
+  return '#ffffff';
+}
+
+// Ensure color is dark enough for white text (dark mode, WCAG AA >= 4.5:1)
+function ensureDarkEnough(hex) {
+  if (contrastWithWhite(hex) >= 4.5) return hex;
+  const [h, s, l] = hexToHsl(hex);
+  let ll = l;
+  while (ll > 0) {
+    ll = Math.max(0, ll - 0.02);
+    const c = hslToHex(h, s, ll);
+    if (contrastWithWhite(c) >= 4.5) return c;
+  }
+  return '#000000';
+}
+
+// s.color stores the base (light-mode) color.
+// themeColor() derives the display color for the current theme.
+function themeColor(baseHex) {
+  return S.theme === 'dark' ? ensureDarkEnough(baseHex) : ensureLightEnough(baseHex);
+}
+
+// Text color on a highlight — white in dark mode, black in light mode
+function contrastText() {
+  return S.theme === 'dark' ? '#ffffff' : '#000000';
+}
 
 function rgbaStr(hex, a) {
   const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
@@ -536,7 +561,7 @@ function _buildSearchRow(id, term, c) {
   const row = document.createElement('div');
   row.className = 'srow'; row.dataset.sid = id;
   row.innerHTML =
-    `<div class="cdot" style="background:${c}" title="Change color"><input type="color" value="${c}"></div>` +
+    `<div class="cdot" style="background:${themeColor(c)}" title="Change color"><input type="color" value="${c}"></div>` +
     `<input class="sinput" type="text" placeholder="Search..." value="${esc(term)}">` +
     `<button class="go-btn" title="Search">${SVG_SEARCH}</button>` +
     `<button class="vis-btn" title="Toggle visibility">${SVG_EYE}</button>` +
@@ -728,8 +753,9 @@ function renderHL() {
       frag.appendChild(document.createTextNode(text.slice(cur, span.s)));
     }
     const isActive = activeResult && span.s === activeResult.start && span.e === activeResult.end;
+    const displayColor = themeColor(span.c);
     const mark = document.createElement('mark');
-    mark.style.cssText = `background:${span.c};color:#000000;border-radius:2px;padding:1px 0`;
+    mark.style.cssText = `background:${displayColor};color:${contrastText()};border-radius:2px;padding:1px 0`;
     if (isActive) {
       mark.style.outline = `2px solid ${outlineColor}`;
       mark.style.outlineOffset = '1px';
@@ -784,13 +810,14 @@ function renderResults() {
     const ss = Math.max(0, r.start - CTX), se = Math.min(text.length, r.end + CTX);
     const pre = text.slice(ss, r.start), mat = text.slice(r.start, r.end), post = text.slice(r.end, se);
     const p = ss > 0 ? '...' : '', sfx = se < text.length ? '...' : '';
-    const tc = contrastText(r.color);
+    const dc = themeColor(r.color);
+    const tc = contrastText();
     const div = document.createElement('div');
     div.className = 'ritem' + (idx === S.activeResultIdx ? ' active-result' : '');
     div.dataset.ridx = idx;
-    div.style.borderLeft = `3px solid ${r.color}`;
+    div.style.borderLeft = `3px solid ${dc}`;
     div.innerHTML =
-      `<div class="rsnip">${p}${esc(pre)}<mark style="background:${r.color};color:${tc}">${esc(mat)}</mark>${esc(post)}${sfx}</div>` +
+      `<div class="rsnip">${p}${esc(pre)}<mark style="background:${dc};color:${tc}">${esc(mat)}</mark>${esc(post)}${sfx}</div>` +
       `<div class="rmeta">@ ${r.start.toLocaleString()}</div>`;
     div.addEventListener('click', () => { S.activeResultIdx = idx; jumpTo(r.start); renderResults(); renderHL(); });
     frag.appendChild(div);
@@ -872,8 +899,9 @@ function showMmTooltip(e, start, end, color) {
   const ss = Math.max(0, start - CTX), se = Math.min(text.length, end + CTX);
   const pre = text.slice(ss, start), mat = text.slice(start, end), post = text.slice(se > end ? end : se, se);
   const p = ss > 0 ? '...' : '', sfx = se < text.length ? '...' : '';
-  const tc = contrastText(color);
-  $mmTip.innerHTML = `${p}${esc(pre)}<mark style="background:${color};color:${tc}">${esc(mat)}</mark>${esc(text.slice(end, se))}${sfx}`;
+  const tc = contrastText();
+  const dc = themeColor(color);
+  $mmTip.innerHTML = `${p}${esc(pre)}<mark style="background:${dc};color:${tc}">${esc(mat)}</mark>${esc(text.slice(end, se))}${sfx}`;
   $mmTip.style.display = 'block';
   positionMmTooltip(e);
 }
