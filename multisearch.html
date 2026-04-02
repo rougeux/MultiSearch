@@ -237,9 +237,12 @@ nav { display:flex; align-items:center; gap:3px }
 .mmk {
   position:absolute; left:50%; transform:translateX(-50%);
   width:18px; height:3px; border-radius:2px; cursor:pointer;
-  pointer-events:all; transition:transform .1s; opacity:0.9;
+  pointer-events:all; transition:transform .1s, box-shadow .1s; opacity:0.9;
 }
-.mmk:hover { transform:translateX(-50%) scaleX(1.3); opacity:1 }
+.mmk:hover {
+  transform:translateX(-50%) scaleX(1.3); opacity:1;
+  box-shadow:0 0 0 1.5px rgba(255,255,255,0.7), 0 0 0 2.5px rgba(0,0,0,0.4);
+}
 #vpi {
   position:absolute; left:2px; right:2px;
   background:var(--vp-bg); border:1px solid var(--vp-brd);
@@ -251,7 +254,30 @@ nav { display:flex; align-items:center; gap:3px }
   position:fixed; z-index:300; background:var(--hdr-bg); color:var(--hdr-txt);
   font-size:12px; line-height:1.45; border-radius:var(--r);
   max-width:240px; pointer-events:all; display:none;
-  box-shadow:0 4px 12px rgba(0,0,0,.25); overflow:hidden;
+  box-shadow:0 4px 12px rgba(0,0,0,.25); overflow:visible;
+}
+#mm-tooltip::after {
+  content:'';
+  position:absolute;
+  top:var(--caret-top, 50%); transform:translateY(-50%);
+  border:6px solid transparent;
+  pointer-events:none;
+}
+/* Default: tooltip is to the LEFT of minimap — caret points right */
+#mm-tooltip.caret-right::after {
+  right:-6px;
+  border-left-color:var(--hdr-bg);
+  border-right-width:0;
+}
+/* Fallback: tooltip is to the RIGHT of minimap — caret points left */
+#mm-tooltip.caret-left::after {
+  left:-6px;
+  border-right-color:var(--hdr-bg);
+  border-left-width:0;
+}
+#mm-tooltip .mm-tip-inner {
+  border-radius:var(--r);
+  overflow:hidden;
 }
 #mm-tooltip mark { border-radius:2px; padding:0 1px; font-weight:600 }
 .mm-tip-entry {
@@ -903,16 +929,18 @@ function renderMinimap() {
   // Sort by pixel position
   items.sort((a, b) => a.pixelTop - b.pixelTop);
 
-  // Cluster items that are within MERGE_PX pixels of each other
-  const MERGE_PX = 4; // marker height is 3px, merge if they'd overlap
+  // Cluster items whose minimap positions are within MERGE_PX of each other.
+  // Compare each item against the FIRST item in the cluster (not a running max)
+  // to prevent chain-merging of distant markers.
+  const MERGE_PX = 3;
   const clusters = [];
   for (const item of items) {
+    const itemMmTop = (item.pixelTop / scrollH) * H;
     const last = clusters[clusters.length - 1];
-    if (last && item.pixelTop - last.maxPx <= MERGE_PX) {
+    if (last && itemMmTop - last.firstMmTop <= MERGE_PX) {
       last.items.push(item);
-      last.maxPx = Math.max(last.maxPx, item.pixelTop);
     } else {
-      clusters.push({ items: [item], maxPx: item.pixelTop });
+      clusters.push({ items: [item], firstMmTop: itemMmTop });
     }
   }
 
@@ -983,6 +1011,8 @@ function showMmTooltip(e, clusterItems) {
   const CTX = 55;
   const tc = contrastText();
 
+  const inner = document.createElement('div');
+  inner.className = 'mm-tip-inner';
   const scroll = document.createElement('div');
   scroll.className = 'mm-tip-scroll';
 
@@ -1002,22 +1032,40 @@ function showMmTooltip(e, clusterItems) {
     scroll.appendChild(entry);
   }
 
+  inner.appendChild(scroll);
   $mmTip.innerHTML = '';
-  $mmTip.appendChild(scroll);
+  $mmTip.appendChild(inner);
   $mmTip.style.display = 'block';
   positionMmTooltip(e);
 }
 
 function positionMmTooltip(e) {
   const tw = $mmTip.offsetWidth || 240, th = $mmTip.offsetHeight || 60;
-  let x = e.clientX - tw - 10, y = e.clientY - th / 2;
-  if (x < 4) x = e.clientX + 14;
+  const markerY = e.clientY; // vertical center of the marker
+
+  // Horizontal: prefer left of minimap, gap = caret width (6px)
+  let x = e.clientX - tw - 6;
+  const onLeft = x >= 4;
+  if (!onLeft) x = e.clientX + 6;
+
+  // Vertical: center tooltip on marker, clamped to viewport
+  let y = markerY - th / 2;
   y = Math.max(4, Math.min(window.innerHeight - th - 4, y));
-  $mmTip.style.left = x + 'px'; $mmTip.style.top = y + 'px';
+
+  // Caret points toward the minimap (right when tooltip is left, left when right)
+  $mmTip.className = onLeft ? 'caret-right' : 'caret-left';
+
+  // Pin caret vertically to the marker position within the tooltip
+  const caretOffset = markerY - y; // pixels from tooltip top to marker center
+  const clampedOffset = Math.max(10, Math.min(th - 10, caretOffset));
+  $mmTip.style.setProperty('--caret-top', `${clampedOffset}px`);
+
+  $mmTip.style.left = x + 'px';
+  $mmTip.style.top = y + 'px';
 }
 let _tipHideTimer = null;
 function hideMmTooltip() {
-  _tipHideTimer = setTimeout(() => { $mmTip.style.display = 'none'; }, 120);
+  _tipHideTimer = setTimeout(() => { $mmTip.style.display = 'none'; }, 300);
 }
 function cancelHideMmTooltip() {
   if (_tipHideTimer) { clearTimeout(_tipHideTimer); _tipHideTimer = null; }
