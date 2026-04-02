@@ -629,7 +629,7 @@ function onColorChange(id, hex) {
   s.color = safe;
   const row = $sboxes.querySelector(`[data-sid="${id}"]`);
   if (row) {
-    row.querySelector('.cdot').style.background = safe;
+    row.querySelector('.cdot').style.background = themeColor(safe);
     // Update the color input to reflect the adjusted color
     const inp = row.querySelector('input[type="color"]');
     if (inp) inp.value = safe;
@@ -923,8 +923,8 @@ function renderMinimap() {
     const avgPct = ci.reduce((s, i) => s + i.pct, 0) / ci.length;
     const topPx = avgPct * H;
 
-    // Unique colors in order of appearance
-    const colors = [...new Set(ci.map(i => i.color))];
+    // Unique theme-adjusted colors in order of appearance
+    const colors = [...new Set(ci.map(i => i.color))].map(c => themeColor(c));
 
     const m = document.createElement('div');
     m.className = 'mmk';
@@ -933,7 +933,6 @@ function renderMinimap() {
     if (colors.length === 1) {
       m.style.background = colors[0];
     } else {
-      // Build a gradient of all colors equally spaced
       const stops = colors.map((c, idx) => {
         const pct0 = (idx / colors.length * 100).toFixed(1);
         const pct1 = ((idx + 1) / colors.length * 100).toFixed(1);
