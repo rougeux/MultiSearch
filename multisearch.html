@@ -593,7 +593,13 @@ function addSearch(term='', color=null) {
   S.searches.push({ id, term, color:c, results:[], visible:true });
   _buildSearchRow(id, term, c);
   _updateDelBtns();
-  if (term) doSearch(id);
+  if (term) {
+    doSearch(id);
+  } else {
+    // Focus the new input so the user can type immediately
+    const row = $sboxes.querySelector(`[data-sid="${id}"]`);
+    if (row) row.querySelector('.sinput').focus();
+  }
 }
 
 function _buildSearchRow(id, term, c) {
@@ -1172,6 +1178,7 @@ initTheme();
 checkBrowser();
 addSearch();
 syncSize();
+$mtxt.focus();
 $mmTip.addEventListener('mouseenter', cancelHideMmTooltip);
 $mmTip.addEventListener('mouseleave', hideMmTooltip);
 </script>
