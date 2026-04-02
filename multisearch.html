@@ -237,10 +237,10 @@ nav { display:flex; align-items:center; gap:3px }
 .mmk {
   position:absolute; left:50%; transform:translateX(-50%);
   width:18px; height:3px; border-radius:2px; cursor:pointer;
-  pointer-events:all; transition:transform .1s, box-shadow .1s; opacity:0.9;
+  pointer-events:all; opacity:0.9;
+  transition:top .06s ease-out, width .06s ease-out, box-shadow .1s;
 }
 .mmk:hover {
-  transform:translateX(-50%) scaleX(1.3); opacity:1;
   box-shadow:0 0 0 1.5px rgba(255,255,255,0.7), 0 0 0 2.5px rgba(0,0,0,0.4);
 }
 #vpi {
@@ -254,42 +254,17 @@ nav { display:flex; align-items:center; gap:3px }
   position:fixed; z-index:300; background:var(--hdr-bg); color:var(--hdr-txt);
   font-size:12px; line-height:1.45; border-radius:var(--r);
   max-width:240px; pointer-events:all; display:none;
-  box-shadow:0 4px 12px rgba(0,0,0,.25); overflow:visible;
-}
-#mm-tooltip::after {
-  content:'';
-  position:absolute;
-  top:var(--caret-top, 50%); transform:translateY(-50%);
-  border:6px solid transparent;
-  pointer-events:none;
-}
-/* Default: tooltip is to the LEFT of minimap — caret points right */
-#mm-tooltip.caret-right::after {
-  right:-6px;
-  border-left-color:var(--hdr-bg);
-  border-right-width:0;
-}
-/* Fallback: tooltip is to the RIGHT of minimap — caret points left */
-#mm-tooltip.caret-left::after {
-  left:-6px;
-  border-right-color:var(--hdr-bg);
-  border-left-width:0;
-}
-#mm-tooltip .mm-tip-inner {
-  border-radius:var(--r);
-  overflow:hidden;
-}
-#mm-tooltip mark { border-radius:2px; padding:0 1px; font-weight:600 }
-.mm-tip-entry {
+  box-shadow:0 4px 12px rgba(0,0,0,.25); overflow:hidden;
   padding:6px 9px; word-break:break-word; cursor:pointer;
 }
-.mm-tip-entry:hover { background:rgba(255,255,255,0.08); }
-.mm-tip-entry + .mm-tip-entry {
-  border-top:1px solid rgba(255,255,255,0.1);
+#mm-tooltip::after {
+  content:''; position:absolute;
+  top:var(--caret-top, 50%); transform:translateY(-50%);
+  border:6px solid transparent; pointer-events:none;
 }
-#mm-tooltip .mm-tip-scroll {
-  max-height:180px; overflow-y:auto;
-}
+#mm-tooltip.caret-right::after { right:-6px; border-left-color:var(--hdr-bg); border-right-width:0; }
+#mm-tooltip.caret-left::after  { left:-6px;  border-right-color:var(--hdr-bg); border-left-width:0; }
+#mm-tooltip mark { border-radius:2px; padding:0 1px; font-weight:600 }
 
 /* MODAL */
 #moverlay {
@@ -904,9 +879,9 @@ function navigateResult(dir) {
 }
 
 // ── Minimap ────────────────────────────────────────────────────────────────────
-// Marker positions are derived from the actual rendered pixel offset of each
-// highlight mark in the $hll layer. Overlapping markers are merged into
-// multicolored gradient markers with a combined scrollable tooltip.
+// Uses S.markEls (built by renderHL, indexed same as allVisibleResults()) so
+// marker positions always match the actual rendered highlights regardless of
+// how many searches exist or what order they were added.
 function renderMinimap() {
   $mmmarks.innerHTML = '';
   const H = $mmap.clientHeight;
@@ -915,72 +890,26 @@ function renderMinimap() {
   const scrollH = $tscroll.scrollHeight;
   if (!scrollH) { updateVPI(); return; }
 
-  const domMarks = $hll.querySelectorAll('mark');
-  if (!domMarks.length) { updateVPI(); return; }
-
-  // Collect all marker data: {pixelTop, pct, domMark, start, end, color}
-  const items = [];
-  let markIdx = 0;
-  for (const s of S.searches) {
-    if (!s.visible || !s.term) continue;
-    for (const r of s.results) {
-      const domMark = domMarks[markIdx++];
-      if (!domMark) continue;
-      const pixelTop = domMark.offsetTop;
-      items.push({ pixelTop, pct: pixelTop / scrollH, domMark, start: r.start, end: r.end, color: s.color });
-    }
-  }
-  if (!items.length) { updateVPI(); return; }
-
-  // Sort by pixel position
-  items.sort((a, b) => a.pixelTop - b.pixelTop);
-
-  // Cluster items whose minimap positions are within MERGE_PX of each other.
-  // Compare each item against the FIRST item in the cluster (not a running max)
-  // to prevent chain-merging of distant markers.
-  const MERGE_PX = 3;
-  const clusters = [];
-  for (const item of items) {
-    const itemMmTop = (item.pixelTop / scrollH) * H;
-    const last = clusters[clusters.length - 1];
-    if (last && itemMmTop - last.firstMmTop <= MERGE_PX) {
-      last.items.push(item);
-    } else {
-      clusters.push({ items: [item], firstMmTop: itemMmTop });
-    }
-  }
+  const all = allVisibleResults();
+  if (!all.length) { updateVPI(); return; }
 
   const frag = document.createDocumentFragment();
-  for (const cluster of clusters) {
-    const { items: ci } = cluster;
-    // Average pixel position for the cluster
-    const avgPct = ci.reduce((s, i) => s + i.pct, 0) / ci.length;
-    const topPx = avgPct * H;
 
-    // Unique theme-adjusted colors in order of appearance
-    const colors = [...new Set(ci.map(i => i.color))].map(c => themeColor(c));
+  all.forEach((r, idx) => {
+    const markEl = S.markEls[idx];
+    if (!markEl) return;
+    const pixelTop = markEl.offsetTop;
+    const topPx = (pixelTop / scrollH) * H;
 
     const m = document.createElement('div');
     m.className = 'mmk';
     m.style.top = `${topPx}px`;
-
-    if (colors.length === 1) {
-      m.style.background = colors[0];
-    } else {
-      const stops = colors.map((c, idx) => {
-        const pct0 = (idx / colors.length * 100).toFixed(1);
-        const pct1 = ((idx + 1) / colors.length * 100).toFixed(1);
-        return `${c} ${pct0}%, ${c} ${pct1}%`;
-      }).join(', ');
-      m.style.background = `linear-gradient(to right, ${stops})`;
-    }
-
-    // Click: jump to the first result in the cluster
-    m.addEventListener('click', e => { e.stopPropagation(); activateByMark(ci[0].start, ci[0].pixelTop); });
-    m.addEventListener('mouseenter', e => showMmTooltip(e, ci));
-    m.addEventListener('mouseleave', hideMmTooltip);
+    m.style.background = themeColor(r.color);
+    m.addEventListener('click', e => { e.stopPropagation(); activateByMark(r.start, pixelTop); });
+    m.addEventListener('mouseenter', e => showMmTooltip(e, r.start, r.end, r.color, pixelTop));
     frag.appendChild(m);
-  }
+  });
+
   $mmmarks.appendChild(frag);
   updateVPI();
 }
@@ -1011,40 +940,6 @@ function jumpToMark(markEl) {
   $tscroll.scrollTo({ top: target, behavior: 'smooth' });
 }
 
-// Minimap tooltip — accepts an array of cluster items
-function showMmTooltip(e, clusterItems) {
-  const text = S.text;
-  const CTX = 55;
-  const tc = contrastText();
-
-  const inner = document.createElement('div');
-  inner.className = 'mm-tip-inner';
-  const scroll = document.createElement('div');
-  scroll.className = 'mm-tip-scroll';
-
-  for (const item of clusterItems) {
-    const { start, end, color } = item;
-    const ss = Math.max(0, start - CTX), se = Math.min(text.length, end + CTX);
-    const pre = text.slice(ss, start);
-    const mat = text.slice(start, end);
-    const post = text.slice(end, se);
-    const p = ss > 0 ? '...' : '', sfx = se < text.length ? '...' : '';
-    const dc = themeColor(color);
-
-    const entry = document.createElement('div');
-    entry.className = 'mm-tip-entry';
-    entry.innerHTML = `${p}${esc(pre)}<mark style="background:${dc};color:${tc};border-radius:2px;padding:0 1px;font-weight:600">${esc(mat)}</mark>${esc(post)}${sfx}`;
-    entry.addEventListener('click', () => { hideMmTooltip(); activateByMark(item.start, item.pixelTop); });
-    scroll.appendChild(entry);
-  }
-
-  inner.appendChild(scroll);
-  $mmTip.innerHTML = '';
-  $mmTip.appendChild(inner);
-  $mmTip.style.display = 'block';
-  positionMmTooltip(e);
-}
-
 function positionMmTooltip(e) {
   const tw = $mmTip.offsetWidth || 240, th = $mmTip.offsetHeight || 60;
   const markerY = e.clientY; // vertical center of the marker
@@ -1070,12 +965,48 @@ function positionMmTooltip(e) {
   $mmTip.style.top = y + 'px';
 }
 let _tipHideTimer = null;
-function hideMmTooltip() {
-  _tipHideTimer = setTimeout(() => { $mmTip.style.display = 'none'; }, 300);
+let _tipActiveMarker = null;
+
+function showMmTooltip(e, start, end, color, pixelTop) {
+  cancelHideMmTooltip();
+  const text = S.text;
+  const CTX = 55;
+  const ss = Math.max(0, start - CTX), se = Math.min(text.length, end + CTX);
+  const pre = text.slice(ss, start), mat = text.slice(start, end), post = text.slice(end, se);
+  const p = ss > 0 ? '...' : '', sfx = se < text.length ? '...' : '';
+  const dc = themeColor(color), tc = contrastText();
+
+  $mmTip.innerHTML = `${p}${esc(pre)}<mark style="background:${dc};color:${tc};border-radius:2px;padding:0 1px;font-weight:600">${esc(mat)}</mark>${esc(post)}${sfx}`;
+  $mmTip.onclick = () => { hideMmTooltip(); activateByMark(start, pixelTop); };
+  $mmTip.style.display = 'block';
+  positionMmTooltip(e);
 }
+
+function hideMmTooltip() {
+  cancelHideMmTooltip();
+  _tipHideTimer = setTimeout(() => {
+    $mmTip.style.display = 'none';
+    _tipActiveMarker = null;
+  }, 100);
+}
+
 function cancelHideMmTooltip() {
   if (_tipHideTimer) { clearTimeout(_tipHideTimer); _tipHideTimer = null; }
 }
+
+// Use document-level mousemove to reliably detect when cursor leaves both
+// the marker and the tooltip — avoids unreliable mouseleave on a 3px element
+document.addEventListener('mousemove', e => {
+  if ($mmTip.style.display === 'none') return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const overMarker = el && el.classList.contains('mmk');
+  const overTooltip = el && ($mmTip === el || $mmTip.contains(el));
+  if (overMarker || overTooltip) {
+    cancelHideMmTooltip();
+  } else {
+    if (!_tipHideTimer) hideMmTooltip();
+  }
+}, { passive: true });
 
 function updateVPI() {
   const H = $mmap.clientHeight, sh = $tscroll.scrollHeight, ch = $tscroll.clientHeight;
@@ -1168,7 +1099,67 @@ window.addEventListener('resize', () => { syncSize(); renderMinimap(); }, { pass
   });
 })();
 
-// ── Modal ──────────────────────────────────────────────────────────────────────
+// ── Minimap fisheye ────────────────────────────────────────────────────────────
+// On mousemove over the minimap, push markers apart around the cursor so
+// tightly-packed markers spread out and become easier to click.
+// Marker size stays constant — only their spacing changes.
+(function initFisheye() {
+  const RADIUS = 120;  // px — influence radius on the minimap
+  const PUSH   = 15;   // px — max displacement applied at the edge of radius
+
+  const BASE_W = 18;   // px — normal marker width
+  const MAX_W  = 44;   // px — max marker width at cursor center
+
+  // For a marker at origY, compute how much it gets pushed away from cursorY.
+  // Markers above cursor move up; markers below move down.
+  // The displacement follows a smooth bell: zero at cursor, peaks near RADIUS/2,
+  // back to zero at RADIUS, zero beyond.
+  function displacement(origY, cursorY) {
+    const d = origY - cursorY;
+    const absd = Math.abs(d);
+    if (absd >= RADIUS) return 0;
+    const u = absd / RADIUS;
+    const bump = 4 * u * (1 - u);
+    return Math.sign(d) * bump * PUSH;
+  }
+
+  // Width scales with proximity to cursor — peaks at cursor, falls off smoothly
+  function widthScale(origY, cursorY) {
+    const absd = Math.abs(origY - cursorY);
+    if (absd >= RADIUS) return BASE_W;
+    const t = 1 - (absd / RADIUS) ** 2;
+    return BASE_W + (MAX_W - BASE_W) * t;
+  }
+
+  function applyFisheye(cursorY) {
+    const marks = $mmmarks.querySelectorAll('.mmk');
+    marks.forEach(m => {
+      const origTop = parseFloat(m.dataset.origTop ?? m.style.top);
+      if (!m.dataset.origTop) m.dataset.origTop = m.style.top;
+      const dy = displacement(origTop, cursorY);
+      m.style.top   = `${origTop + dy}px`;
+      m.style.width = `${widthScale(origTop, cursorY)}px`;
+    });
+  }
+
+  function resetFisheye() {
+    const marks = $mmmarks.querySelectorAll('.mmk');
+    marks.forEach(m => {
+      if (m.dataset.origTop) {
+        m.style.top = m.dataset.origTop;
+        delete m.dataset.origTop;
+      }
+      m.style.width = '';
+    });
+  }
+
+  $mmap.addEventListener('mousemove', e => {
+    const rect = $mmap.getBoundingClientRect();
+    applyFisheye(e.clientY - rect.top);
+  }, { passive: true });
+
+  $mmap.addEventListener('mouseleave', resetFisheye);
+})();
 function showAbout() { document.getElementById('moverlay').classList.add('vis'); }
 function closeAbout() { document.getElementById('moverlay').classList.remove('vis'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAbout(); });
@@ -1179,8 +1170,6 @@ checkBrowser();
 addSearch();
 syncSize();
 $mtxt.focus();
-$mmTip.addEventListener('mouseenter', cancelHideMmTooltip);
-$mmTip.addEventListener('mouseleave', hideMmTooltip);
 </script>
 </body>
 </html>
